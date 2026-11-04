@@ -1,0 +1,61 @@
+# Layer 2: human annotations. What a domain expert would tell a new analyst about this data.
+dataset:
+  description: >
+    Card transactions processed for merchants between 2019-01-01 and 2019-10-31, with fraud
+    labels for a subset of them. Used by Fraud Success Managers (FSMs) to find fraud patterns
+    and turn them into rules.
+  gotchas:
+    - "Money columns end in _usd_cents and are integers in US cents. Divide by 100.0 for dollars."
+    - "data.fraud_labels.transaction_id is TEXT but data.transactions.id is INTEGER. Always join with fl.transaction_id = t.id::text (never cast the text side; the index is on t.id::text)."
+    - "Only part of the transactions are labelled (about 67%). A fraud rate is fraud / labelled transactions, so join fraud_labels with an INNER JOIN, or use AVG(fl.is_fraud::int)."
+    - "Fraud is rare: the overall base rate is about 0.17% of labelled transactions. Compare any segment's fraud rate against this base rate (the lift)."
+    - "errors is NULL when the transaction had no error."
+    - "All dates fall between 2019-01-01 and 2019-10-31. 'Last month' means October 2019 unless the FSM says otherwise."
+    - "Always schema-qualify tables: data.transactions, data.cards, and so on."
+
+tables:
+  transactions:
+    description: One row per card transaction (about 1.16M rows). The fact table.
+    columns:
+      id: Transaction id (INTEGER). Join to fraud_labels with fl.transaction_id = t.id::text.
+      date: Timestamp of the transaction.
+      card_id: The card used. Join to data.cards.id.
+      amount_usd_cents: Amount in US cents. About 5% are negative (most likely refunds or reversals).
+      transaction_type: "'Chip Transaction', 'Online Transaction' or 'Swipe Transaction' (card-present vs card-not-present)."
+      merchant_id: Join to data.merchants.id.
+      merchant_location_id: Join to data.merchant_locations.id.
+      errors: "NULL, or one of 'Bad CVV', 'Bad Card Number', 'Bad Expiration', 'Bad PIN', 'Bad Zipcode', 'Insufficient Balance', 'Technical Glitch'. Card errors (Bad PIN, Bad CVV, ...) can be fraud or card-testing signals; check them against the labels."
+  fraud_labels:
+    description: Ground truth for a subset of transactions (about 777k labelled, 1,360 fraud).
+    columns:
+      transaction_id: TEXT copy of transactions.id.
+      is_fraud: TRUE when the transaction was confirmed fraud.
+  cards:
+    description: Payment cards (3,437). Each belongs to a user.
+    columns:
+      user_id: Join to data.users.id.
+      card_brand: "'Amex', 'Discover', 'Mastercard' or 'Visa'."
+      card_type: "'Credit', 'Debit' or 'Debit (Prepaid)'."
+      has_chip: Whether the card has an EMV chip.
+      credit_limit_usd_cents: Credit limit in US cents.
+      card_on_dark_web: Whether the card details were seen on the dark web.
+      year_pin_last_changed: Year the PIN was last changed.
+  users:
+    description: Cardholders (1,206).
+    columns:
+      birth_date: Date of birth; use age(date '2019-10-31', birth_date) for age at the end of the data.
+      gender: "'Male' or 'Female'."
+      yearly_income_usd_cents: Yearly income in US cents.
+      total_debt_usd_cents: Total debt in US cents.
+      credit_score: Credit score (489-850).
+  merchants:
+    description: Merchants (27,516). Names are anonymised ("Merchant 123").
+    columns:
+      mcc: Merchant category code. Join to data.mcc_codes.mcc for a readable description.
+  merchant_locations:
+    description: Where a merchant transaction took place (70,539 locations).
+    columns:
+      city: City name. Online transactions use locations with city 'ONLINE' and an empty state.
+      state: "Two-letter US state code for US locations, or the country name (for example 'Italy', 'Canada') for locations outside the US. Foreign locations: length(state) > 2."
+  mcc_codes:
+    description: Merchant category code descriptions (109 codes).

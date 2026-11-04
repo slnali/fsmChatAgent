@@ -1,0 +1,80 @@
+version: "3"
+
+dotenv: [".env"]
+
+tasks:
+  setup:
+    desc: Install backend and frontend dependencies and create .env
+    cmds:
+      - test -f .env || cp .env.example .env
+      - cd backend && uv sync
+      - cd frontend && npm ci
+
+  dev:
+    desc: Start Postgres (migrate + load on first run), then backend and frontend
+    cmds:
+      - task: db
+      - task: app
+
+  app:
+    internal: true
+    deps: [backend, frontend]
+
+  db:
+    desc: Start local Postgres, apply migrations, load data on first run
+    cmds:
+      - docker compose up -d --wait
+      - cd backend && uv run python -m scripts.setup_local_db
+
+  db:down:
+    desc: Stop local Postgres (keeps the data volume)
+    cmds:
+      - docker compose down
+
+  db:reset:
+    desc: Delete the local database volume and set it up again
+    cmds:
+      - docker compose down -v
+      - task: db
+
+  backend:
+    desc: Run the FastAPI backend on :8000
+    dir: backend
+    cmds:
+      - uv run uvicorn fsm_ai.api.app:create_app --factory --reload --port 8000
+
+  frontend:
+    desc: Run the Next.js frontend on :3000
+    dir: frontend
+    cmds:
+      - npm run dev
+
+  test:
+    desc: Backend (testcontainers) and frontend tests
+    cmds:
+      - cd backend && uv run pytest
+      - cd frontend && npm test
+
+  lint:
+    desc: Ruff and ESLint-free type checks for the frontend
+    cmds:
+      - cd backend && uv run ruff check . && uv run ruff format --check .
+      - cd frontend && npx tsc --noEmit
+
+  typecheck:
+    desc: Pyrefly type check
+    dir: backend
+    cmds:
+      - uv run pyrefly check
+
+  eval:
+    desc: Run the eval suite against the local database (needs ANTHROPIC_API_KEY)
+    dir: backend
+    cmds:
+      - uv run python -m evals.run {{.CLI_ARGS}}
+
+  profile:
+    desc: Regenerate context/profile.json (layer 3) from the local database
+    dir: backend
+    cmds:
+      - uv run python -m scripts.build_context_profile

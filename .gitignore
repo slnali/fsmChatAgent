@@ -1,0 +1,24 @@
+# secrets
+.env
+
+# python
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+
+# node
+node_modules/
+.next/
+next-env.d.ts
+*.tsbuildinfo
+
+# data unpacked from data.db.gz
+data/.cache/
+
+# eval reports (one sample is committed)
+backend/evals/reports/*
+!backend/evals/reports/sample.*
+
+# os
+.DS_Store

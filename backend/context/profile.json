@@ -1,0 +1,358 @@
+{
+  "tables": {
+    "cards": {
+      "row_count": 3437,
+      "columns": {
+        "id": {
+          "type": "integer",
+          "null_pct": 0.0,
+          "distinct": 3437,
+          "min": "0",
+          "max": "6144"
+        },
+        "user_id": {
+          "type": "integer",
+          "null_pct": 0.0,
+          "distinct": 1206,
+          "min": "0",
+          "max": "1998"
+        },
+        "card_brand": {
+          "type": "text",
+          "null_pct": 0.0,
+          "distinct": 4,
+          "values": {
+            "Mastercard": 1806,
+            "Visa": 1291,
+            "Amex": 225,
+            "Discover": 115
+          }
+        },
+        "card_type": {
+          "type": "text",
+          "null_pct": 0.0,
+          "distinct": 3,
+          "values": {
+            "Debit": 1998,
+            "Credit": 1137,
+            "Debit (Prepaid)": 302
+          }
+        },
+        "expires": {
+          "type": "date",
+          "null_pct": 0.0,
+          "distinct": 1612,
+          "min": "2019-01-01",
+          "max": "2024-12-31"
+        },
+        "has_chip": {
+          "type": "boolean",
+          "null_pct": 0.0,
+          "distinct": 2,
+          "values": {
+            "True": 3092,
+            "False": 345
+          }
+        },
+        "credit_limit_usd_cents": {
+          "type": "integer",
+          "null_pct": 0.0,
+          "distinct": 2262,
+          "min": "0",
+          "max": "14139100"
+        },
+        "acct_open_date": {
+          "type": "date",
+          "null_pct": 0.0,
+          "distinct": 2602,
+          "min": "1991-01-28",
+          "max": "2019-12-23"
+        },
+        "year_pin_last_changed": {
+          "type": "integer",
+          "null_pct": 0.0,
+          "distinct": 19,
+          "min": "2002",
+          "max": "2020",
+          "values": {
+            "2011": 590,
+            "2010": 489,
+            "2012": 338,
+            "2009": 303,
+            "2013": 302,
+            "2014": 269,
+            "2015": 243,
+            "2008": 199,
+            "2016": 172,
+            "2007": 126,
+            "2017": 107,
+            "2018": 102,
+            "2019": 79,
+            "2006": 54,
+            "2005": 25,
+            "2020": 19,
+            "2004": 9,
+            "2003": 9,
+            "2002": 2
+          }
+        },
+        "card_on_dark_web": {
+          "type": "boolean",
+          "null_pct": 0.0,
+          "distinct": 1,
+          "values": {
+            "False": 3437
+          }
+        }
+      }
+    },
+    "fraud_labels": {
+      "row_count": 777339,
+      "columns": {
+        "transaction_id": {
+          "type": "text",
+          "null_pct": 0.0,
+          "distinct": 777339
+        },
+        "is_fraud": {
+          "type": "boolean",
+          "null_pct": 0.0,
+          "distinct": 2,
+          "values": {
+            "False": 775979,
+            "True": 1360
+          }
+        }
+      }
+    },
+    "mcc_codes": {
+      "row_count": 109,
+      "columns": {
+        "mcc": {
+          "type": "integer",
+          "null_pct": 0.0,
+          "distinct": 109,
+          "min": "1711",
+          "max": "9402"
+        },
+        "description": {
+          "type": "text",
+          "null_pct": 0.0,
+          "distinct": 108
+        }
+      }
+    },
+    "merchant_locations": {
+      "row_count": 70539,
+      "columns": {
+        "id": {
+          "type": "integer",
+          "null_pct": 0.0,
+          "distinct": 70539,
+          "min": "1",
+          "max": "70539"
+        },
+        "merchant_id": {
+          "type": "integer",
+          "null_pct": 0.0,
+          "distinct": 27516,
+          "min": "2",
+          "max": "100340"
+        },
+        "city": {
+          "type": "text",
+          "null_pct": 0.0,
+          "distinct": 7123
+        },
+        "state": {
+          "type": "text",
+          "null_pct": 0.0,
+          "distinct": 113
+        },
+        "zip": {
+          "type": "integer",
+          "null_pct": 1.93,
+          "distinct": 13813,
+          "min": "1001",
+          "max": "99829"
+        }
+      }
+    },
+    "merchants": {
+      "row_count": 27516,
+      "columns": {
+        "id": {
+          "type": "integer",
+          "null_pct": 0.0,
+          "distinct": 27516,
+          "min": "2",
+          "max": "100340"
+        },
+        "name": {
+          "type": "text",
+          "null_pct": 0.0,
+          "distinct": 27516
+        },
+        "mcc": {
+          "type": "integer",
+          "null_pct": 0.0,
+          "distinct": 109,
+          "min": "1711",
+          "max": "9402"
+        }
+      }
+    },
+    "transactions": {
+      "row_count": 1159966,
+      "columns": {
+        "id": {
+          "type": "integer",
+          "null_pct": 0.0,
+          "distinct": 1159966,
+          "min": "22326462",
+          "max": "23761874"
+        },
+        "date": {
+          "type": "timestamp without time zone",
+          "null_pct": 0.0,
+          "distinct": 353060,
+          "min": "2019-01-01 00:02:00",
+          "max": "2019-10-31 23:59:00"
+        },
+        "card_id": {
+          "type": "integer",
+          "null_pct": 0.0,
+          "distinct": 3437,
+          "min": "0",
+          "max": "6144"
+        },
+        "amount_usd_cents": {
+          "type": "integer",
+          "null_pct": 0.0,
+          "distinct": 35338,
+          "min": "-50000",
+          "max": "661344"
+        },
+        "transaction_type": {
+          "type": "text",
+          "null_pct": 0.0,
+          "distinct": 3,
+          "values": {
+            "Chip Transaction": 823180,
+            "Swipe Transaction": 196799,
+            "Online Transaction": 139987
+          }
+        },
+        "merchant_id": {
+          "type": "integer",
+          "null_pct": 0.0,
+          "distinct": 27516,
+          "min": "2",
+          "max": "100340"
+        },
+        "merchant_location_id": {
+          "type": "integer",
+          "null_pct": 0.0,
+          "distinct": 70539,
+          "min": "1",
+          "max": "70539"
+        },
+        "errors": {
+          "type": "text",
+          "null_pct": 98.39,
+          "distinct": 7,
+          "values": {
+            "None": 1141312,
+            "Insufficient Balance": 11582,
+            "Bad PIN": 2843,
+            "Technical Glitch": 2333,
+            "Bad Card Number": 716,
+            "Bad Expiration": 568,
+            "Bad CVV": 535,
+            "Bad Zipcode": 77
+          }
+        }
+      }
+    },
+    "users": {
+      "row_count": 1206,
+      "columns": {
+        "id": {
+          "type": "integer",
+          "null_pct": 0.0,
+          "distinct": 1206,
+          "min": "0",
+          "max": "1998"
+        },
+        "birth_date": {
+          "type": "date",
+          "null_pct": 0.0,
+          "distinct": 1179,
+          "min": "1918-05-31",
+          "max": "1996-10-24"
+        },
+        "gender": {
+          "type": "text",
+          "null_pct": 0.0,
+          "distinct": 2,
+          "values": {
+            "Female": 617,
+            "Male": 589
+          }
+        },
+        "address": {
+          "type": "text",
+          "null_pct": 0.0,
+          "distinct": 1206
+        },
+        "latitude": {
+          "type": "real",
+          "null_pct": 0.0,
+          "distinct": 733,
+          "min": "21.3",
+          "max": "48.53"
+        },
+        "longitude": {
+          "type": "real",
+          "null_pct": 0.0,
+          "distinct": 853,
+          "min": "-158.18",
+          "max": "-68.67"
+        },
+        "per_capita_income_usd_cents": {
+          "type": "integer",
+          "null_pct": 0.0,
+          "distinct": 1109,
+          "min": "0",
+          "max": "16314500"
+        },
+        "yearly_income_usd_cents": {
+          "type": "integer",
+          "null_pct": 0.0,
+          "distinct": 1188,
+          "min": "100",
+          "max": "28019900"
+        },
+        "total_debt_usd_cents": {
+          "type": "integer",
+          "null_pct": 0.0,
+          "distinct": 1137,
+          "min": "0",
+          "max": "46185400"
+        },
+        "credit_score": {
+          "type": "integer",
+          "null_pct": 0.0,
+          "distinct": 280,
+          "min": "489",
+          "max": "850"
+        }
+      }
+    }
+  },
+  "facts": {
+    "labelled_transactions": 777339,
+    "fraud_transactions": 1360,
+    "base_fraud_rate_pct": 0.175
+  }
+}
