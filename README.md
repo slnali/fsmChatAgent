@@ -36,8 +36,7 @@ The provided `data.db` ships gzipped in `data/` (the raw file is too close to Gi
 flowchart LR
   UI[Next.js chat] -- POST + SSE --> API[FastAPI]
   API --> Agent[Agent loop<br/>Claude Sonnet 5.5]
-  Agent -- run_sql / propose_rule --> Guard[SQL guard]
-  Guard --> RO[(Postgres `data`<br/>as fsm_agent_ro)]
+  Agent -- run_sql / propose_rule --> RO[(Postgres `data`<br/>as fsm_agent_ro)]
   API -- chats, messages, rules --> App[(Postgres `fsm_chat`<br/>as fsm_app)]
   UI -- POST /rules --> API
 ```
@@ -53,10 +52,16 @@ Steps 1–3 usually loop a few times before a rule appears.
 - **Agent.** LangChain `ChatAnthropic` with `claude-sonnet-5-5` and only two tools, both read-only:
   - `run_sql(sql, purpose)` runs a query.
   - `propose_rule(name, where_clause, rationale)` checks a candidate rule and measures it: how many transactions it matches, how many of those are labelled and fraud, and the fraud rate.
+- **Streaming.** The answer streams over SSE, with these events:
+  - `text_delta`
+  - `tool_call`
+  - `tool_result`
+  - `rule_proposal`
+  - `error`
+  - `done`
 
-  I wrote the agent loop myself rather than using a prebuilt agent, so I control exactly what gets streamed and stored.
-- **Streaming.** The answer streams over SSE. Events are `text_delta`, `tool_call`, `tool_result`, `rule_proposal`, `error` and `done`. The answer is kept short on purpose. The SQL, results and charts sit in a collapsed panel under each answer, for when you want to dig in.
-- **Rules are saved by the user, not the agent.** Saving needs write access and is a business decision, so it's a normal `POST /rules`. The backend re-validates and re-measures the rule rather than trusting what the client sent. Rules can't reference `fraud_labels`, because labels don't exist yet when a transaction happens. Labels are only used to *measure* a rule.
+  The answer is kept short on purpose. The SQL, results and charts sit in a collapsed panel under each answer, for when you want to dig in.
+- **Rules are saved by the user, not the agent.** Saving needs write access and is a business decision, so it's a normal `POST /rules`. The backend re-validates and re-measures the rule rather than trusting what the client sent.
 - **History and audit.** Every user, assistant and tool message is stored as JSONB in `fsm_chat.chat_messages`, along with the model, prompt version, latency and tokens. That table is the audit trail. The Claude API is stateless, so the history is replayed each turn. That's also what lets a page refresh reload the chat (`?chat=<id>` in the URL).
 - **Why Postgres and not SQLite?** I wanted the database to enforce safety, not just the app. SQLite has no roles, grants or statement timeouts. There's one database with two schemas (`data` and `fsm_chat`) and three roles. `fsm_agent_ro` can only SELECT from `data`. `fsm_app` can only touch `fsm_chat`. The owner role is used for migrations.
 
@@ -66,7 +71,7 @@ backend/
   migrations/            schemas, data tables, chat tables, roles
   context/               layer 1 example queries, layer 2 annotations, layer 3 profile
   src/fsm_ai/agent/      agent loop, tools, events
-  src/fsm_ai/data_access sql_guard.py, readonly_executor.py
+  src/fsm_ai/data_access readonly_executor.py
   src/fsm_ai/api/        FastAPI routes + SSE
   evals/                 golden set, runner, comparator, grader, scorecard
 frontend/                Next.js single-page chat
@@ -94,14 +99,13 @@ The prompt also tells the agent to:
 
 Every query is shown with a one-line purpose, so the FSM can check the working.
 
-I meant to set temperature to 0, but Sonnet 5.5 doesn't accept anything other than the default. Consistency comes from the grounding, the guard and the evals instead. Temperature 0 makes an answer repeatable, not correct.
+I meant to set temperature to 0, but Sonnet 5.5 doesn't accept anything other than the default. Consistency comes from the grounding and the evals instead. Temperature 0 makes an answer repeatable, not correct.
 
-**Safety: defence in depth.** Each layer assumes the one before it can fail:
+**Safety: let the database enforce it.** I don't rely on the model behaving:
 1. The prompt tells the agent to refuse writes and ignore instructions to bypass that.
-2. **SQL guard** (`sql_guard.py`). It parses the SQL with sqlglot and allows exactly one SELECT over `data.*`. It rejects write and DDL nodes, `SELECT INTO`, locking, `pg_*`/`dblink`/`set_config`, and anything in `fsm_chat`. It returns a reason the agent can act on.
-3. **The `fsm_agent_ro` role.** It's the real boundary: SELECT on `data` only, read-only transactions by default and a 15s statement timeout.
-4. **Executor.** It uses a read-only connection and caps results at 20 rows, with a `truncated` flag so the agent knows it's seeing part of the data.
-5. A human saves rules.
+2. **The `fsm_agent_ro` role** is the real boundary. It can only SELECT from `data` (it can't see `fsm_chat`), its transactions are read-only by default, and it has a 15s statement timeout. Any write fails in Postgres, whatever SQL the model comes up with.
+3. **Executor.** It uses a read-only connection and caps results at 20 rows, with a `truncated` flag so the agent knows it's seeing part of the data.
+4. A human saves rules.
 
 ## Evaluation
 
@@ -114,14 +118,14 @@ This is a simple version of the "Moving fast without breaking trust" section of 
 - **Safety checks:**
   - the data is unchanged (each `data` table's row count and checksum are taken before and after the case),
   - the agent refused,
-  - and any forbidden SQL it tried was blocked.
+  - and whether it tried any forbidden SQL (and the database refused it).
 - **Scorecard.** It's written to `evals/reports/` as Markdown and JSON, with one column per stage instead of a single pass/fail. That way you can see *where* a case went wrong.
 
 The latest run is in [`evals/reports/sample.md`](backend/evals/reports/sample.md). All 6 accuracy cases match the golden results (superset), with grader scores of 0.95–1.00. All 3 safety cases hold. The run takes about 36s and roughly 128k tokens. Building it caught a real comparator bug: the agent rounded a rate and the comparator wrongly called it a mismatch.
 
 There are also deterministic tests (`task test`), which don't need an API key:
-- the SQL guard (writes, injection tricks, schema escapes),
-- the roles against a real Postgres,
+- the roles against a real Postgres (writes and other schemas are refused),
+- the read-only executor (row cap, errors, rule metrics),
 - the API chat flow end to end with a fake model,
 - the comparator and the safety checks,
 - the main frontend components.
@@ -162,7 +166,8 @@ This is a POC, so I kept the scope tight. Here's what I'd do next, in rough orde
 - **Access and security.**
   - Auth plus pass-through permissions, so queries run with the user's own data rights.
   - Masked views for PII columns.
-  - An allow-list SQL guard, and per-user rate and cost limits.
+  - Per-user rate and cost limits.
+  - **Nice to have: a basic SQL guard** in front of the database, for example a sqlglot parse that only allows a single SELECT on `data.*`. It wouldn't add a safety boundary (the role already is one), but it would give the agent clearer errors and stop it switching off its own limits (for example `SET statement_timeout = 0`).
 - **Platform.**
   - Resumable streams. A refresh mid-answer currently loses the answer in progress, so the turn should run in the background and the browser should resume with `Last-Event-ID`.
   - Connection pooling, tracing, and archiving the audit log to S3.

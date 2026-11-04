@@ -1,4 +1,7 @@
-"""Runs guarded SQL as fsm_agent_ro: read-only, time-boxed and capped at max_rows."""
+"""Runs the agent's SQL as fsm_agent_ro: read-only, time-boxed and capped at max_rows.
+
+The database role is the safety boundary: it can only SELECT from the `data` schema.
+"""
 
 import datetime as dt
 from dataclasses import asdict, dataclass, field
@@ -6,8 +9,6 @@ from decimal import Decimal
 from typing import Any
 
 import psycopg
-
-from fsm_ai.data_access.sql_guard import SqlGuard, rule_count_sql
 
 
 @dataclass(frozen=True)
@@ -35,16 +36,11 @@ class RuleEvaluationError(Exception):
 
 
 class ReadOnlyExecutor:
-    def __init__(self, dsn: str, guard: SqlGuard, max_rows: int = 20) -> None:
+    def __init__(self, dsn: str, max_rows: int = 20) -> None:
         self._dsn = dsn
-        self._guard = guard
         self._max_rows = max_rows
 
     def run(self, sql: str) -> QueryResult:
-        verdict = self._guard.check(sql)
-        if not verdict.ok:
-            return QueryResult(error=f"Rejected by SQL guard: {verdict.reason}")
-
         # Fetch one extra row to know whether the result was truncated.
         # The newline stops a trailing `--` comment from swallowing the closing bracket.
         capped = f"SELECT * FROM (\n{_strip_semicolons(sql)}\n) AS q LIMIT {self._max_rows + 1}"
@@ -58,9 +54,8 @@ class ReadOnlyExecutor:
         return QueryResult(columns=columns, rows=rows, row_count=len(rows), truncated=truncated)
 
     def evaluate_rule(self, where_clause: str) -> RuleMetrics:
-        verdict = self._guard.check_where_clause(where_clause)
-        if not verdict.ok:
-            raise RuleEvaluationError(verdict.reason)
+        if not where_clause.strip():
+            raise RuleEvaluationError("The WHERE clause is empty.")
         try:
             _, rows = self._fetch(rule_count_sql(where_clause))
         except psycopg.Error as error:
@@ -82,6 +77,18 @@ class ReadOnlyExecutor:
                 columns = [column.name for column in cursor.description or []]
                 rows = [[_to_json_value(value) for value in row] for row in cursor.fetchall()]
         return columns, rows
+
+
+def rule_count_sql(where_clause: str) -> str:
+    """The SQL a rule's WHERE clause is evaluated in (newlines stop `--` comment tricks)."""
+    return (
+        "SELECT COUNT(*) AS matched_count,\n"
+        "       COUNT(fl.transaction_id) AS labelled_count,\n"
+        "       COUNT(*) FILTER (WHERE fl.is_fraud) AS fraud_count\n"
+        "FROM data.transactions t\n"
+        "LEFT JOIN data.fraud_labels fl ON fl.transaction_id = t.id::text\n"
+        f"WHERE (\n{where_clause}\n)"
+    )
 
 
 def _strip_semicolons(sql: str) -> str:

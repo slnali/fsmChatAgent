@@ -15,7 +15,6 @@ from fsm_ai.agent.tools import AgentTools
 from fsm_ai.api.app import create_app
 from fsm_ai.context.system_prompt import build_system_prompt
 from fsm_ai.data_access.readonly_executor import ReadOnlyExecutor
-from fsm_ai.data_access.sql_guard import SqlGuard
 from fsm_ai.migrations.runner import apply_migrations
 from fsm_ai.persistence.chats import ChatRepo
 from fsm_ai.persistence.database import AppDatabase
@@ -59,7 +58,7 @@ def database_urls() -> Iterator[DatabaseUrls]:
 
 @pytest.fixture
 def executor(database_urls: DatabaseUrls) -> ReadOnlyExecutor:
-    return ReadOnlyExecutor(database_urls.agent_ro, SqlGuard(), max_rows=TEST_MAX_ROWS)
+    return ReadOnlyExecutor(database_urls.agent_ro, max_rows=TEST_MAX_ROWS)
 
 
 @pytest.fixture

@@ -16,7 +16,7 @@ from pydantic import SecretStr
 from evals.cases import AccuracyCase, GoldenSet, SafetyCase, load_golden_set
 from evals.compare import Comparison, compare_results
 from evals.judge import ClaudeGrader, Grade, Grader
-from evals.safety import SqlAttempt, blocked_attempts, changed_tables, is_refusal, snapshot
+from evals.safety import SqlAttempt, changed_tables, forbidden_attempts, is_refusal, snapshot
 from evals.scorecard import (
     AccuracyResult,
     Report,
@@ -30,7 +30,6 @@ from fsm_ai.agent.runner import AgentRunner
 from fsm_ai.config import Settings, get_settings
 from fsm_ai.context.system_prompt import PROMPT_VERSION
 from fsm_ai.data_access.readonly_executor import QueryResult, ReadOnlyExecutor
-from fsm_ai.data_access.sql_guard import SqlGuard
 from fsm_ai.services import build_agent, build_executor
 
 # The agent sees at most max_result_rows; the eval re-runs its SQL with a higher cap.
@@ -93,7 +92,6 @@ class EvalContext:
     agent: AgentRunner
     executor: ReadOnlyExecutor
     grader: Grader
-    guard: SqlGuard
     agent_ro_dsn: str
 
 
@@ -143,7 +141,7 @@ async def run_safety_case(context: EvalContext, case: SafetyCase) -> SafetyResul
     trace = await run_agent(context.agent, case.question)
     after = await asyncio.to_thread(snapshot, context.agent_ro_dsn)
     changed = changed_tables(before, after)
-    blocked = blocked_attempts(trace.attempts, context.guard)
+    blocked = forbidden_attempts(trace.attempts)
     result = SafetyResult(
         case_id=case.id,
         question=case.question,
@@ -186,7 +184,6 @@ async def run_golden_set(
 
 
 def build_context(settings: Settings) -> EvalContext:
-    guard = SqlGuard()
     grader_llm = ChatAnthropic(
         model=settings.grader_model,
         max_tokens=1024,
@@ -194,9 +191,8 @@ def build_context(settings: Settings) -> EvalContext:
     )
     return EvalContext(
         agent=build_agent(settings, build_executor(settings)),
-        executor=ReadOnlyExecutor(settings.agent_ro_database_url, guard, EVAL_MAX_ROWS),
+        executor=ReadOnlyExecutor(settings.agent_ro_database_url, EVAL_MAX_ROWS),
         grader=ClaudeGrader(grader_llm),
-        guard=guard,
         agent_ro_dsn=settings.agent_ro_database_url,
     )
 

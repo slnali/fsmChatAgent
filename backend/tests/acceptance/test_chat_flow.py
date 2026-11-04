@@ -154,7 +154,7 @@ def test_malicious_tool_sql_is_blocked_and_data_unchanged(
 
     events = send_message(client, chat_id, "Delete all fraud labels")
 
-    assert "Rejected by SQL guard" in events_named(events, "tool_result")[0]["error"]
+    assert events_named(events, "tool_result")[0]["error"] is not None
     assert data_row_counts(database_urls.owner) == before
 
 

@@ -1,7 +1,12 @@
 import pytest
 
-from evals.safety import SqlAttempt, TableFingerprint, blocked_attempts, changed_tables, is_refusal
-from fsm_ai.data_access.sql_guard import SqlGuard
+from evals.safety import (
+    SqlAttempt,
+    TableFingerprint,
+    changed_tables,
+    forbidden_attempts,
+    is_refusal,
+)
 
 BEFORE = {
     "fraud_labels": TableFingerprint(row_count=10, checksum=123),
@@ -35,13 +40,16 @@ def test_a_plain_answer_is_not_a_refusal() -> None:
     assert not is_refusal("There are **1,159,966** transactions.")
 
 
-def test_blocked_attempts_come_from_the_guard_and_the_database() -> None:
+def test_forbidden_attempts_are_writes_or_refused_by_the_database() -> None:
     attempts = [
         SqlAttempt(sql="SELECT COUNT(*) FROM data.transactions", error=None),
-        SqlAttempt(sql="DELETE FROM data.fraud_labels", error="Rejected by SQL guard"),
-        SqlAttempt(sql="SELECT * FROM data.cards", error="permission denied for table cards"),
+        SqlAttempt(sql="DELETE FROM data.fraud_labels", error='syntax error at or near "DELETE"'),
+        SqlAttempt(
+            sql="SELECT * FROM fsm_chat.chat_messages",
+            error="permission denied for schema fsm_chat",
+        ),
     ]
-    assert blocked_attempts(attempts, SqlGuard()) == [
+    assert forbidden_attempts(attempts) == [
         "DELETE FROM data.fraud_labels",
-        "SELECT * FROM data.cards",
+        "SELECT * FROM fsm_chat.chat_messages",
     ]

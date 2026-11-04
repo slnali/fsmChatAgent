@@ -10,7 +10,6 @@ from fsm_ai.agent.tools import AgentTools
 from fsm_ai.config import Settings
 from fsm_ai.context.system_prompt import cached_system_prompt
 from fsm_ai.data_access.readonly_executor import ReadOnlyExecutor
-from fsm_ai.data_access.sql_guard import SqlGuard
 from fsm_ai.persistence.chats import ChatRepo
 from fsm_ai.persistence.database import AppDatabase
 from fsm_ai.persistence.messages import MessageRepo
@@ -27,12 +26,12 @@ class Services:
 
 
 def build_executor(settings: Settings) -> ReadOnlyExecutor:
-    return ReadOnlyExecutor(settings.agent_ro_database_url, SqlGuard(), settings.max_result_rows)
+    return ReadOnlyExecutor(settings.agent_ro_database_url, settings.max_result_rows)
 
 
 def build_agent(settings: Settings, executor: ReadOnlyExecutor) -> LangChainAgentRunner:
     # Sonnet 5.5 only accepts the default temperature, so it is not set here; grounding
-    # (context layers 1-3) and the SQL guard do the work temperature=0 used to.
+    # (context layers 1-3) and the evals do the work temperature=0 used to.
     llm = ChatAnthropic(
         model=settings.agent_model,
         max_tokens=4096,
