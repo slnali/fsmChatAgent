@@ -22,3 +22,6 @@ backend/evals/reports/*
 
 # os
 .DS_Store
+
+# written by `next dev` for coding agents
+frontend/AGENTS.md

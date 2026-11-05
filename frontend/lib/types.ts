@@ -1,4 +1,4 @@
-// Mirrors the backend contracts in MASTER_PLAN.md (REST + SSE).
+// Mirrors the backend contracts (REST endpoints + SSE events).
 
 export type ToolCall = { id: string; sql: string; purpose: string };
 
