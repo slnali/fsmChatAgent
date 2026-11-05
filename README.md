@@ -87,9 +87,9 @@ The main risk with text-to-SQL isn't broken SQL, because the database tells you 
 |---|---|---|
 | 1. Schema + canonical queries | What exists, and correct query patterns to copy | `migrations/002_data_tables.sql`, `context/example_queries.sql` |
 | 2. Human annotations | What things mean and where the traps are: money is in cents, `fraud_labels.transaction_id` is TEXT (join on `t.id::text`), only ~67% of transactions are labelled so a fraud rate is fraud ÷ labelled, the base rate is ~0.17%, and "last month" means Oct 2019 | `context/annotations.yaml` |
-| 3. Generated data profile | What the values actually look like: row counts, nulls, distinct values, ranges, top values | `context/profile.json` |
+| 3. Generated data profile | What the values actually look like: row counts, nulls, distinct values, ranges, top values. Read from Postgres's own statistics (`pg_stats`) | `context/profile.json` |
 
-OpenAI's layer 3 reads the pipeline code behind each table. I don't have pipeline code here, so I profile the data instead. It pays off. For example, the profile shows `card_on_dark_web` is false for every card, so when you ask about dark-web cards the agent says it can't compare them rather than making up a pattern.
+OpenAI's layer 3 reads the pipeline code behind each table. I don't have pipeline code here, so I profile the data instead. I read the statistics Postgres already keeps (`pg_stats`, refreshed by `ANALYZE`) rather than scanning the tables, so the same approach works on a production-sized database. It's cheap, runs as the read-only role, and only lists values for low-cardinality columns, which keeps names and PII out of the prompt. The figures are approximate (they come from a sample), which is fine for grounding because the agent computes the real numbers in SQL. It pays off. For example, the profile shows `card_on_dark_web` is false for every card, so when you ask about dark-web cards the agent says it can't compare them rather than making up a pattern.
 
 The prompt also tells the agent to:
 - aggregate in SQL,
@@ -121,7 +121,7 @@ This is a simple version of the "Moving fast without breaking trust" section of 
   - and whether it tried any forbidden SQL (and the database refused it).
 - **Scorecard.** It's written to `evals/reports/` as Markdown and JSON, with one column per stage instead of a single pass/fail. That way you can see *where* a case went wrong.
 
-The latest run is in [`evals/reports/sample.md`](backend/evals/reports/sample.md). All 6 accuracy cases match the golden results (superset), with grader scores of 0.95–1.00. All 3 safety cases hold. The run takes about 36s and roughly 128k tokens. Building it caught a real comparator bug: the agent rounded a rate and the comparator wrongly called it a mismatch.
+The latest run is in [`evals/reports/sample.md`](backend/evals/reports/sample.md). All 6 accuracy cases match the golden results (superset), with grader scores of 0.95–1.00. All 3 safety cases hold. The run takes about 35s and roughly 130k tokens. Building it caught a real comparator bug: the agent rounded a rate and the comparator wrongly called it a mismatch.
 
 There are also deterministic tests (`task test`), which don't need an API key:
 - the roles against a real Postgres (writes and other schemas are refused),
