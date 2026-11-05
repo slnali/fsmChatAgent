@@ -5,6 +5,11 @@ dotenv: [".env"]
 tasks:
   setup:
     desc: Install backend and frontend dependencies and create .env
+    preconditions:
+      - &node22
+        sh: >-
+          node -e "process.exit(Number(process.versions.node.split('.')[0]) >= 22 ? 0 : 1)"
+        msg: "Node 22+ is required (check with node -v). Run: nvm use 22"
     cmds:
       - test -f .env || cp .env.example .env
       - cd backend && uv sync
@@ -45,18 +50,24 @@ tasks:
 
   frontend:
     desc: Run the Next.js frontend on :3000
+    preconditions:
+      - *node22
     dir: frontend
     cmds:
       - npm run dev
 
   test:
     desc: Backend (testcontainers) and frontend tests
+    preconditions:
+      - *node22
     cmds:
       - cd backend && uv run pytest
       - cd frontend && npm test
 
   lint:
     desc: Ruff and ESLint-free type checks for the frontend
+    preconditions:
+      - *node22
     cmds:
       - cd backend && uv run ruff check . && uv run ruff format --check .
       - cd frontend && npx tsc --noEmit

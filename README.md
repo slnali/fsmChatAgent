@@ -30,6 +30,18 @@ The provided `data.db` ships gzipped in `data/` (the raw file is too close to Gi
 - "Is fraud higher for online transactions over $500? Compare it to everything else."
 - "OK, propose a rule for that." Then click **Create rule** on the card.
 
+## Code layout
+```
+backend/
+  migrations/            schemas, data tables, chat tables, roles
+  context/               layer 1 example queries, layer 2 annotations, layer 3 profile
+  src/fsm_ai/agent/      agent loop, tools, events
+  src/fsm_ai/data_access readonly_executor.py
+  src/fsm_ai/api/        FastAPI routes + SSE
+  evals/                 golden set, runner, comparator, grader, scorecard
+frontend/                Next.js single-page chat
+```
+
 ## How it works
 
 ```mermaid
@@ -65,17 +77,12 @@ Steps 1–3 usually loop a few times before a rule appears.
 - **History and audit.** Every user, assistant and tool message is stored as JSONB in `fsm_chat.chat_messages`, along with the model, prompt version, latency and tokens. That table is the audit trail. The Claude API is stateless, so the history is replayed each turn. That's also what lets a page refresh reload the chat (`?chat=<id>` in the URL).
 - **Why Postgres and not SQLite?** I wanted the database to enforce safety, not just the app. SQLite has no roles, grants or statement timeouts. There's one database with two schemas (`data` and `fsm_chat`) and three roles. `fsm_agent_ro` can only SELECT from `data`. `fsm_app` can only touch `fsm_chat`. The owner role is used for migrations.
 
-### Code layout
-```
-backend/
-  migrations/            schemas, data tables, chat tables, roles
-  context/               layer 1 example queries, layer 2 annotations, layer 3 profile
-  src/fsm_ai/agent/      agent loop, tools, events
-  src/fsm_ai/data_access readonly_executor.py
-  src/fsm_ai/api/        FastAPI routes + SSE
-  evals/                 golden set, runner, comparator, grader, scorecard
-frontend/                Next.js single-page chat
-```
+### Frontend
+- **Next.js, one screen.** It's a chat with a rules panel, which is all an FSM needs here. The chat id is in the URL, so a refresh rejoins the conversation.
+- **The agent answers in Markdown.** LLMs write Markdown naturally, and it can be shown token by token as it streams. A JSON answer would have to finish before anything could be shown. Markdown also gives bold key figures and short lists for free.
+- **Tables and charts are built from the real query results, not by the model.** The frontend turns each tool result into a Markdown table and a Mermaid chart, so the numbers on screen can't be hallucinated. They sit in a collapsed panel so the answer stays short.
+- **[Streamdown](https://github.com/vercel/streamdown) for rendering.** It's a Markdown renderer built for streaming LLM output, and it copes with half-finished Markdown (unclosed bold, code blocks, tables) without the page flickering. Its plugins handle SQL highlighting and Mermaid charts.
+- **`fetch` streaming instead of `EventSource`.** Sending a message is a POST, and `EventSource` only supports GET.
 
 ## Dealing with LLM risks
 
@@ -110,66 +117,36 @@ I meant to set temperature to 0, but Sonnet 5.5 doesn't accept anything other th
 ## Evaluation
 
 ### Offline: the eval suite (`backend/evals/`)
-This is a simple version of the "Moving fast without breaking trust" section of the OpenAI article. It drives the same agent the API uses, without a UI.
+This is a simple version of the "Moving fast without breaking trust" section of the OpenAI article. Run it with `task eval`.
 
-- **Golden set** (`golden_set.yaml`) has 6 accuracy questions, from a simple count up to multi-join monthly trends. Each one has hand-written golden SQL. It also has 3 safety cases: deleting fraud labels, a prompt injection asking for `DROP TABLE`, and reading the chat history table.
-- **Comparator** (deterministic). It runs both the agent's SQL and the golden SQL and compares the **results, not the SQL text**. Row order and column names don't matter, extra columns are allowed, numbers match within a tolerance (or the precision the agent rounded to), and a rate can be a fraction or a percentage. It returns `exact`, `superset`, `mismatch` or `error`.
-- **Claude grader.** It sees the question, both queries, both results, the agent's answer and the comparator's verdict. It returns a 0–1 score with a short explanation. The comparator catches wrong numbers. The grader catches a correct number with a misleading answer, or a different but reasonable reading of the question.
-- **Safety checks:**
-  - the data is unchanged (each `data` table's row count and checksum are taken before and after the case),
-  - the agent refused,
-  - and whether it tried any forbidden SQL (and the database refused it).
-- **Scorecard.** It's written to `evals/reports/` as Markdown and JSON, with one column per stage instead of a single pass/fail. That way you can see *where* a case went wrong.
+**How a case runs:**
+1. The runner sends the golden question to the **same agent the API uses**, just without the UI, and records the SQL it ran, its answer, its latency and its tokens.
+2. The runner re-runs the agent's final SQL and the hand-written golden SQL against the database.
+3. The comparator checks that the two results contain the same values.
+4. The Claude grader scores the answer from 0 to 1 and explains why.
+5. A safety case also fingerprints every `data` table before and after, and checks that the agent refused.
+6. The results go into a scorecard in `evals/reports/`, as Markdown and JSON.
 
-The latest run is in [`evals/reports/sample.md`](backend/evals/reports/sample.md). All 6 accuracy cases match the golden results (superset), with grader scores of 0.95–1.00. All 3 safety cases hold. The run takes about 35s and roughly 130k tokens. Building it caught a real comparator bug: the agent rounded a rate and the comparator wrongly called it a mismatch.
+**The pieces, and why each one is there:**
+- **Golden set** (`golden_set.yaml`). It has 6 questions, from a simple count up to multi-join trends, plus 3 hostile prompts (deleting the fraud labels, injecting `DROP TABLE`, reading the chat history). *Why:* hand-written SQL gives a trusted answer to check against.
+- **Comparator.** It compares results by value, ignoring row order, column names, extra columns and rounding. *Why:* there are many correct ways to write the same SQL, so comparing SQL text would fail correct answers.
+- **Claude grader.** It sees both queries, both results and the agent's answer. *Why:* it catches what values alone can't, such as a correct number with a misleading answer.
+- **Safety checks.** The data must be unchanged, the agent must refuse, and any forbidden SQL is flagged. *Why:* they prove the agent can't be talked into damaging anything.
+- **Scorecard.** It has one column per stage instead of a single pass/fail. *Why:* you can see *where* a case went wrong.
 
-There are also deterministic tests (`task test`), which don't need an API key:
-- the roles against a real Postgres (writes and other schemas are refused),
-- the read-only executor (row cap, errors, rule metrics),
-- the API chat flow end to end with a fake model,
-- the comparator and the safety checks,
-- the main frontend components.
+**Latest run** ([`sample.md`](backend/evals/reports/sample.md)): all 6 accuracy cases match the golden results, with grader scores of 0.95–1.00, and all 3 safety cases hold. It takes about 35s and 130k tokens.
+
+`task test` also runs deterministic tests, with no API key needed. They cover the database roles, the executor, the chat flow with a fake model, the comparator and the frontend components.
 
 ### What I'd show the Head of Fraud
-- **Offline**:
-  - accuracy by question difficulty,
-  - zero data changes across the safety cases,
-  - and the trend over prompt and model versions (each message stores `prompt_version`).
-
-  Run it in CI on every prompt or model change.
-- **Online**, not built:
-  - how many proposed rules FSMs actually save,
-  - time from first question to a saved rule,
-  - queries per insight,
-  - SQL error and retry rate,
-  - 👍/👎 per answer,
-  - how often FSMs edit the agent's SQL or rule,
-  - and, most importantly, each saved rule's precision and recall against fraud labels that arrive later.
+- **Offline: is it accurate and safe?** Accuracy by question difficulty, zero data changes in the safety cases, and the trend across prompt and model versions, all run in CI.
+- **Online: is it actually useful?** How many proposed rules FSMs save, time from first question to a rule, SQL error and retry rate, 👍/👎, and how often FSMs edit the agent's SQL.
+- **The metric that matters most:** each saved rule's precision and recall against fraud labels that arrive later.
 
 ## What's missing / what I'd do next
 
-This is a POC, so I kept the scope tight. Here's what I'd do next, in rough order:
-
-- **Better evals.**
-  - Grow the golden set to 20–50 cases taken from real FSM conversations.
-  - Run each case several times to measure consistency.
-  - Use a different model as the grader and check it against human-labelled examples.
-  - Replace the regex refusal check.
-  - Add multi-turn scenarios that score the final rule.
-- **Context that scales.** Putting everything in the prompt works for 7 tables but not for a real warehouse. Next steps:
-  - a schema search tool, so only the relevant tables enter the context,
-  - plus the remaining layers: institutional knowledge (RAG over fraud playbooks), memory (FSM corrections becoming reviewed annotations) and runtime introspection.
-  - Prompt caching, since the system prompt is replayed on every step.
-- **Rule quality.**
-  - Backtest rules on a later time window, not the same data that suggested them, and show the false positives (good customers blocked).
-  - Then an approval workflow, versioning, and shadow mode before anything reaches the production rules engine.
-- **Access and security.**
-  - Auth plus pass-through permissions, so queries run with the user's own data rights.
-  - Masked views for PII columns.
-  - Per-user rate and cost limits.
-  - **Nice to have: a basic SQL guard** in front of the database, for example a sqlglot parse that only allows a single SELECT on `data.*`. It wouldn't add a safety boundary (the role already is one), but it would give the agent clearer errors and stop it switching off its own limits (for example `SET statement_timeout = 0`).
-- **Platform.**
-  - Resumable streams. A refresh mid-answer currently loses the answer in progress, so the turn should run in the background and the browser should resume with `Last-Event-ID`.
-  - Connection pooling, tracing, and archiving the audit log to S3.
-  - A proper migration tool, and secrets from a vault.
-- **UX.** A side panel with previous chats, and login.
+- **Stronger evals.** Grow the golden set to 20–50 cases taken from real FSM conversations, run each case several times, and run the suite in CI whenever the prompt or model changes.
+- **Context that scales.** Give the agent a schema search tool so only the relevant tables enter the prompt, then add layers 4–6: fraud playbooks, memory of FSM corrections, and runtime introspection.
+- **Rule backtesting.** Test each rule on a later time window and show the false positives (good customers blocked) before it goes anywhere near production.
+- **Auth and permissions.** Log users in and run queries with each user's own data rights, with PII masked.
+- **Production hardening.** Resumable streams (a refresh mid-answer currently loses it), prompt caching, connection pooling and tracing.

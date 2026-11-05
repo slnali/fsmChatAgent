@@ -13,8 +13,23 @@ const result = (columns: string[], rows: unknown[][], extra = {}) => ({
 describe("sqlToMarkdown", () => {
   it("shows the purpose then a sql fence", () => {
     expect(sqlToMarkdown({ sql: "SELECT 1", purpose: "Count" })).toBe(
-      "\n\n*Count*\n\n```sql\nSELECT 1\n```\n\n",
+      "\n\n*Count*\n\n```sql\nSELECT\n  1\n```\n\n",
     );
+  });
+
+  it("formats single-line SQL across lines so it is readable", () => {
+    const markdown = sqlToMarkdown({
+      sql: "SELECT t.transaction_type, COUNT(*) AS n FROM data.transactions t GROUP BY 1",
+      purpose: "Count by type",
+    });
+
+    expect(markdown).toContain(
+      "SELECT\n  t.transaction_type,\n  COUNT(*) AS n\nFROM\n  data.transactions t\nGROUP BY\n  1",
+    );
+  });
+
+  it("shows the SQL unchanged when it cannot be formatted", () => {
+    expect(sqlToMarkdown({ sql: "SELECT (((", purpose: "" })).toContain("```sql\nSELECT (((\n```");
   });
 });
 

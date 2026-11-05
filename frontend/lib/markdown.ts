@@ -1,8 +1,19 @@
 // Turns agent events into Markdown for Streamdown. Pure functions, easy to test.
+import { format } from "sql-formatter";
+
 import type { ToolCall, ToolResult } from "./types";
 
 export function sqlToMarkdown({ sql, purpose }: Pick<ToolCall, "sql" | "purpose">): string {
-  return `\n\n*${purpose.trim() || "Query"}*\n\n\`\`\`sql\n${sql.trim()}\n\`\`\`\n\n`;
+  return `\n\n*${purpose.trim() || "Query"}*\n\n\`\`\`sql\n${readableSql(sql)}\n\`\`\`\n\n`;
+}
+
+/** The model sometimes writes a whole query on one line; lay it out for display only. */
+function readableSql(sql: string): string {
+  try {
+    return format(sql, { language: "postgresql" });
+  } catch {
+    return sql.trim();
+  }
 }
 
 export function resultToMarkdown(
